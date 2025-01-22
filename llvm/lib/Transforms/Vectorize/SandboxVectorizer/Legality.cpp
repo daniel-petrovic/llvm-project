@@ -12,6 +12,7 @@
 #include "llvm/SandboxIR/Utils.h"
 #include "llvm/SandboxIR/Value.h"
 #include "llvm/Support/Debug.h"
+#include "llvm/Transforms/Vectorize/SandboxVectorizer/InstrMaps.h"
 #include "llvm/Transforms/Vectorize/SandboxVectorizer/VecUtils.h"
 
 namespace llvm::sandboxir {
@@ -184,7 +185,24 @@ static void dumpBndl(ArrayRef<Value *> Bndl) {
 }
 #endif // NDEBUG
 
-const LegalityResult &LegalityAnalysis::canVectorize(ArrayRef<Value *> Bndl) {
+CollectDescr
+LegalityAnalysis::getHowToCollectValues(ArrayRef<Value *> Bndl) const {
+  SmallVector<CollectDescr::ExtractElementDescr, 4> Vec;
+  Vec.reserve(Bndl.size());
+  for (auto [Lane, V] : enumerate(Bndl)) {
+    if (auto *VecOp = IMaps.getVectorForOrig(V)) {
+      // If there is a vector containing `V`, then get the lane it came from.
+      std::optional<int> ExtractIdxOpt = IMaps.getOrigLane(VecOp, V);
+      Vec.emplace_back(VecOp, ExtractIdxOpt ? *ExtractIdxOpt : -1);
+    } else {
+      Vec.emplace_back(V);
+    }
+  }
+  return CollectDescr(std::move(Vec));
+}
+
+const LegalityResult &LegalityAnalysis::canVectorize(ArrayRef<Value *> Bndl,
+                                                     bool SkipScheduling) {
   // If Bndl contains values other than instructions, we need to Pack.
   if (any_of(Bndl, [](auto *V) { return !isa<Instruction>(V); })) {
     LLVM_DEBUG(dbgs() << "Not vectorizing: Not Instructions:\n";
@@ -192,13 +210,36 @@ const LegalityResult &LegalityAnalysis::canVectorize(ArrayRef<Value *> Bndl) {
     return createLegalityResult<Pack>(ResultReason::NotInstructions);
   }
 
+  auto CollectDescrs = getHowToCollectValues(Bndl);
+  if (CollectDescrs.hasVectorInputs()) {
+    if (auto ValueShuffleOpt = CollectDescrs.getSingleInput()) {
+      auto [Vec, NeedsShuffle] = *ValueShuffleOpt;
+      if (!NeedsShuffle)
+        return createLegalityResult<DiamondReuse>(Vec);
+      llvm_unreachable("TODO: Unimplemented");
+    } else {
+      llvm_unreachable("TODO: Unimplemented");
+    }
+  }
+
   if (auto ReasonOpt = notVectorizableBasedOnOpcodesAndTypes(Bndl))
     return createLegalityResult<Pack>(*ReasonOpt);
 
-  // TODO: Check for existing vectors containing values in Bndl.
-
-  // TODO: Check with scheduler.
+  if (!SkipScheduling) {
+    // TODO: Try to remove the IBndl vector.
+    SmallVector<Instruction *, 8> IBndl;
+    IBndl.reserve(Bndl.size());
+    for (auto *V : Bndl)
+      IBndl.push_back(cast<Instruction>(V));
+    if (!Sched.trySchedule(IBndl))
+      return createLegalityResult<Pack>(ResultReason::CantSchedule);
+  }
 
   return createLegalityResult<Widen>();
+}
+
+void LegalityAnalysis::clear() {
+  Sched.clear();
+  IMaps.clear();
 }
 } // namespace llvm::sandboxir
