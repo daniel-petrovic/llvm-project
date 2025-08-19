@@ -4841,9 +4841,9 @@ VarCreationState Compiler<Emitter>::visitVarDecl(const VarDecl *VD,
           return false;
         return this->emitSetLocal(*VarT, Offset, VD) && Scope.destroyLocals();
       }
-        if (!this->visit(Init))
-          return false;
-        return this->emitSetLocal(*VarT, Offset, VD);
+      if (!this->visit(Init))
+        return false;
+      return this->emitSetLocal(*VarT, Offset, VD);
     }
   } else {
     if (std::optional<unsigned> Offset = this->allocateLocal(
@@ -5601,6 +5601,8 @@ template <class Emitter> bool Compiler<Emitter>::visitIfStmt(const IfStmt *IS) {
       return false;
     if (!this->emitInv(IS))
       return false;
+  } else if (IS->getCond()->isValueDependent()) {
+    return false;
   } else {
     if (!this->visitBool(IS->getCond()))
       return false;

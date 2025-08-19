@@ -103,3 +103,19 @@ namespace IfScope2 {
   }
   static_assert(foo());
 }
+
+namespace ValueDependent {
+  template <class T,
+          bool =
+          []() -> bool   // both-error {{non-type template argument is not a constant expression}}
+          {
+            if (requires { T::type; })
+              return true;
+            return false;
+          }()>
+  struct p {
+    using type = void;
+  };
+
+  template <class T> using P = p<T>::type; // both-note {{while checking a default template argument used here}}
+}
