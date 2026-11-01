@@ -1234,6 +1234,11 @@ static void addX86InterruptAttrs(const FunctionDecl *FD, llvm::GlobalValue *GV,
 
   const auto *PtrTy = FD->getParamDecl(0)->getType()->castAs<PointerType>();
   llvm::Type *ByValTy = CGM.getTypes().ConvertType(PtrTy->getPointeeType());
+  // The frame type may be incomplete. The interrupt calling convention fixes
+  // the frame's stack location independently of its type, but byval requires a
+  // sized type.
+  if (!ByValTy->isSized())
+    ByValTy = llvm::Type::getInt8Ty(Fn->getContext());
   llvm::Attribute NewAttr = llvm::Attribute::getWithByValType(
     Fn->getContext(), ByValTy);
   Fn->addParamAttr(0, NewAttr);
