@@ -1,3 +1,4 @@
+// RUN: %clang_cc1 -std=c++17 -fsyntax-only -fdeclspec -Wno-ignored-attributes -verify %s
 // RUN: %clang_cc1 -fsyntax-only -fms-extensions -Wno-ignored-attributes -verify %s
 
 struct [[]] __attribute__((lockable)) __declspec(dllexport) A {}; // ok
@@ -13,9 +14,9 @@ struct [[]] __attribute__((lockable)) [[]] __declspec(dllexport) H {}; // ok
 [[noreturn]] __declspec(dllexport) __attribute__((cdecl)) void b(); // ok
 [[]] [[noreturn]] __attribute__((cdecl)) __declspec(dllexport) void c(); // ok
 
-__declspec(dllexport) [[noreturn]] __attribute__((cdecl)) void d(); // expected-error {{an attribute list cannot appear here}}
-__declspec(dllexport) __attribute__((cdecl)) [[noreturn]] void e(); // expected-error {{an attribute list cannot appear here}}
-__attribute__((cdecl)) __declspec(dllexport) [[noreturn]] void f(); // expected-error {{an attribute list cannot appear here}}
+__declspec(dllexport) [[noreturn]] __attribute__((cdecl)) void d(); // ok
+__declspec(dllexport) __attribute__((cdecl)) [[noreturn]] void e(); // ok
+__attribute__((cdecl)) __declspec(dllexport) [[noreturn]] void f(); // ok
 
 __attribute__((cdecl)) [[noreturn]] __declspec(dllexport) void g(); // ok
 
@@ -60,3 +61,44 @@ __attribute__((warn_unused_result)) [[maybe_unused]] int f();
 [[maybe_unused]] __attribute__((warn_unused_result)) [[]]
 __attribute__((nothrow)) [[nodiscard]] int h();
 }
+
+// Leading attribute permutations at global and namespace scope.
+[[]] __declspec() int declspecAfterStandard;
+__declspec() [[]] int standardAfterDeclspec;
+
+__attribute__(()) [[]] __declspec() int mixedGlobal0;
+[[]] __attribute__(()) __declspec() int mixedGlobal1;
+__attribute__(()) __declspec() [[]] int mixedGlobal2;
+__declspec() __attribute__(()) [[]] int mixedGlobal3;
+__declspec() [[]] __attribute__(()) int mixedGlobal4;
+[[]] __declspec() __attribute__(()) int mixedGlobal5;
+
+namespace Mixed {
+[[]] __declspec() int declspecAfterStandard;
+__declspec() [[]] int standardAfterDeclspec;
+__attribute__(()) [[]] __declspec() int mixedNamed0;
+[[]] __attribute__(()) __declspec() int mixedNamed1;
+__attribute__(()) __declspec() [[]] int mixedNamed2;
+__declspec() __attribute__(()) [[]] int mixedNamed3;
+__declspec() [[]] __attribute__(()) int mixedNamed4;
+[[]] __declspec() __attribute__(()) int mixedNamed5;
+}
+__declspec(align(32)) [[maybe_unused]] __attribute__((aligned(16)))
+__declspec() [[]] int preservedDeclspec;
+static_assert(__alignof__(preservedDeclspec) == 32, "declspec must be preserved");
+__declspec() [[maybe_unused]] __attribute__((aligned(64))) int preservedGNU;
+static_assert(__alignof__(preservedGNU) == 64, "GNU attribute must be preserved");
+__declspec() [[nodiscard]] __attribute__(()) int preservedStandard();
+void checkStandard() {
+  preservedStandard(); // expected-warning {{ignoring return value of function declared with 'nodiscard' attribute}}
+}
+
+// Mixed leading attributes also work in linkage specifications.
+extern "C" {
+__declspec() [[maybe_unused]] int linkageBlock0;
+__declspec() __attribute__(()) [[maybe_unused]] int linkageBlock1;
+__attribute__(()) __declspec() [[maybe_unused]] int linkageBlock2;
+}
+extern "C" __declspec() [[maybe_unused]] int linkageSingle0;
+extern "C" __declspec() __attribute__(()) [[maybe_unused]] int linkageSingle1;
+extern "C" __attribute__(()) __declspec() [[maybe_unused]] int linkageSingle2;
